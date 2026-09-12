@@ -116,17 +116,42 @@ function check(name, fn) {
     assert.equal(store.records.value[0].status, "已回退");
   });
 
-  // 用例 9.6：正常状态链 生效中 → 待确认 → 已回退 仍可流转
-  check("正常状态链：生效中 → 待确认 → 已回退", () => {
-    const live = store.records.value.find((r) => r.id === created.id);
-    assert.equal(live.status, "生效中");
-    assert.equal(store.flowStatus(live.id), true);
-    assert.equal(store.records.value.find((r) => r.id === live.id).status, "待确认");
-    assert.equal(store.flowStatus(live.id), true);
-    assert.equal(store.records.value.find((r) => r.id === live.id).status, "已回退");
+  // 用例 9.6：正常状态链 生效中 → 待确认 → 已回退 仍可流转（仅最新记录）
+  const fresh98 = store.addAdjustment({
+    fuel: "98号汽油",
+    price: 9.5,
+    operator: "测试员",
+    effectiveDate: "2026-09-12",
+  });
+  check("正常状态链：生效中 → 待确认 → 已回退（仅最新记录）", () => {
+    const find98 = () => store.records.value.find((r) => r.id === fresh98.id);
+    assert.equal(find98().status, "生效中");
+    assert.equal(store.flowStatus(fresh98.id), true);
+    assert.equal(find98().status, "待确认");
+    assert.equal(store.flowStatus(fresh98.id), true);
+    assert.equal(find98().status, "已回退");
     // 到达终态后继续流转仍被拒绝
-    assert.equal(store.flowStatus(live.id), false);
-    assert.equal(store.records.value.find((r) => r.id === live.id).status, "已回退");
+    assert.equal(store.flowStatus(fresh98.id), false);
+    assert.equal(find98().status, "已回退");
+  });
+
+  // 用例 9.7：历史（非最新）记录不能再流转状态
+  check("历史记录流转被拒绝且状态不变", () => {
+    // 给 98号汽油再来一次调价，上一条变为历史记录
+    const newer98 = store.addAdjustment({
+      fuel: "98号汽油",
+      price: 9.3,
+      operator: "测试员",
+      effectiveDate: "2026-09-12",
+    });
+    const old98 = store.records.value.find((r) => r.id === fresh98.id);
+    assert.equal(store.isCurrent(old98), false);
+    assert.equal(old98.status, "已回退");
+    assert.equal(store.flowStatus(old98.id), false);
+    assert.equal(store.records.value.find((r) => r.id === fresh98.id).status, "已回退");
+    // 最新记录依然可以正常流转
+    assert.equal(store.flowStatus(newer98.id), true);
+    assert.equal(store.records.value.find((r) => r.id === newer98.id).status, "待确认");
   });
 
   // 用例 10：历史记录（非最新）重复恢复被拒绝；最新记录可恢复

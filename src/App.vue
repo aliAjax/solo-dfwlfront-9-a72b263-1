@@ -201,8 +201,14 @@ const statusCounts = store.statusCounts;
                 <button
                   class="secondary"
                   type="button"
-                  :disabled="record.status === '已回退'"
-                  :title="record.status === '已回退' ? '已回退为终态，不能再流转为生效中' : ''"
+                  :disabled="!store.isCurrent(record) || record.status === '已回退'"
+                  :title="
+                    !store.isCurrent(record)
+                      ? '历史记录不能再修改状态，仅最新挂牌价可流转'
+                      : record.status === '已回退'
+                        ? '已回退为终态，不能再流转为生效中'
+                        : ''
+                  "
                   @click="store.flowStatus(record.id)"
                 >
                   流转状态

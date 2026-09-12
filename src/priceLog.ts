@@ -150,11 +150,12 @@ export function createPriceStore(storage?: StorageLike | null) {
 
   /**
    * 状态流转：生效中 → 待确认 → 已回退（终态）。
-   * 已回退记录不允许再流转回生效中，返回 false 且不改状态。
+   * 仅该油品的最新一条记录允许流转；历史记录改状态会被拒绝，
+   * 已回退记录也不允许再流转回生效中。返回 false 表示状态未变更。
    */
   function flowStatus(id: string): boolean {
     const target = records.value.find((record) => record.id === id);
-    if (!target || target.status === "已回退") return false;
+    if (!target || !isCurrent(target) || target.status === "已回退") return false;
     target.status = target.status === "生效中" ? "待确认" : "已回退";
     persist();
     return true;

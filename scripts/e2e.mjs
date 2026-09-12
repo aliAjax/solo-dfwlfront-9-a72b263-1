@@ -102,32 +102,52 @@ if (n95Rollback !== 1) throw new Error(`回退记录数量异常: ${n95Rollback}
 ok("重复恢复防护：最新记录「已是默认价」禁用，旧记录「历史记录」禁用，无重复回退记录");
 ok("状态边界：已回退卡「流转状态」按钮禁用，不会再变回生效中");
 
-// 正常记录的流转链仍然可用：生效中 -> 待确认
+// 正常记录的流转链仍然可用：先确认历史记录的流转按钮禁用，
+// 再新增一条 98号汽油 的最新记录，验证 生效中 -> 待确认 -> 已回退
 const liveCard = page.locator(".record").nth(1);
 const liveFlowBtn = liveCard.getByRole("button", { name: "流转状态" });
-if (!(await liveFlowBtn.isEnabled())) throw new Error("生效中记录的流转按钮应可用");
-await liveFlowBtn.click();
+if (await liveFlowBtn.isEnabled())
+  throw new Error("历史（非最新）记录的流转状态按钮应禁用");
+ok("状态边界：历史记录「流转状态」按钮禁用，生效中不会被改成待确认");
+
+await selects.first().selectOption("全部油品");
+await page.selectOption("form select", "98号汽油");
+await page.fill('input[type="number"]', "9.50");
+await page.fill('input[type="text"]', "E2E测试员");
+await page.fill("textarea", "用于流转验证");
+await page.getByRole("button", { name: "保存价格" }).click();
+await page.waitForTimeout(150);
+
+const freshCard = page.locator(".record").first();
+if (!(await freshCard.locator(".record-title").textContent()).includes("98号汽油"))
+  throw new Error("新增 98号汽油记录应排在最前");
+const freshFlowBtn = freshCard.getByRole("button", { name: "流转状态" });
+if (!(await freshFlowBtn.isEnabled())) throw new Error("最新记录的流转按钮应可用");
+await freshFlowBtn.click();
 await page.waitForTimeout(100);
-const liveStatus = await liveCard.locator(".status").textContent();
-if (liveStatus.trim() !== "待确认") throw new Error(`正常流转异常: ${liveStatus}`);
-// 再点一次 -> 已回退，之后按钮禁用
-await liveCard.getByRole("button", { name: "流转状态" }).click();
+if ((await freshCard.locator(".status").textContent()).trim() !== "待确认")
+  throw new Error("生效中 -> 待确认 流转异常");
+await freshFlowBtn.click();
 await page.waitForTimeout(100);
-if ((await liveCard.locator(".status").textContent()).trim() !== "已回退")
-  throw new Error("待确认流转后应为已回退");
-if (await liveCard.getByRole("button", { name: "流转状态" }).isEnabled())
+if ((await freshCard.locator(".status").textContent()).trim() !== "已回退")
+  throw new Error("待确认 -> 已回退 流转异常");
+if (await freshFlowBtn.isEnabled())
   throw new Error("到达已回退后流转按钮应禁用");
-ok("正常状态链保持可用：生效中 → 待确认 → 已回退后按钮禁用");
+ok("正常状态链保持可用：最新记录 生效中 → 待确认 → 已回退后按钮禁用");
 await shot("03-restored");
 
-// 7. 刷新持久化
+// 11. 刷新持久化
 await page.reload({ waitUntil: "networkidle" });
 await page.waitForSelector(".record");
-const afterReload = await page.locator(".record-title").first().textContent();
-const afterReloadStatus = await page.locator(".record .status").first().textContent();
-if (!afterReload.includes("8.05") || afterReloadStatus.trim() !== "已回退")
-  throw new Error(`刷新后数据异常: ${afterReload} ${afterReloadStatus}`);
-ok("刷新后数据保留：首条仍为 95号汽油 ¥8.05 已回退");
+const allTitles = await page.locator(".record-title").allTextContents();
+const allStatuses = await page.locator(".record .status").allTextContents();
+const rollback95 = allTitles.findIndex((t) => t.includes("95号汽油") && t.includes("8.05"));
+if (rollback95 === -1 || allStatuses[rollback95].trim() !== "已回退")
+  throw new Error(`刷新后 95号回退记录丢失: ${JSON.stringify(allTitles)}`);
+const rollback98 = allTitles.findIndex((t) => t.includes("98号汽油") && t.includes("9.50"));
+if (rollback98 === -1 || allStatuses[rollback98].trim() !== "已回退")
+  throw new Error(`刷新后 98号已回退记录状态异常`);
+ok("刷新后数据保留：95号 ¥8.05 已回退与 98号 ¥9.50 已回退记录均在");
 
 // 8. 清空全部 -> 全局空数据提示
 await page.locator(".filters select").first().selectOption("全部油品");

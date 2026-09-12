@@ -148,16 +148,16 @@ export function createPriceStore(storage?: StorageLike | null) {
     return true;
   }
 
-  function nextStatus(status: PriceStatus): PriceStatus {
-    const index = STATUSES.indexOf(status);
-    return STATUSES[(index + 1) % STATUSES.length];
-  }
-
-  function flowStatus(id: string) {
+  /**
+   * 状态流转：生效中 → 待确认 → 已回退（终态）。
+   * 已回退记录不允许再流转回生效中，返回 false 且不改状态。
+   */
+  function flowStatus(id: string): boolean {
     const target = records.value.find((record) => record.id === id);
-    if (!target) return;
-    target.status = nextStatus(target.status);
+    if (!target || target.status === "已回退") return false;
+    target.status = target.status === "生效中" ? "待确认" : "已回退";
     persist();
+    return true;
   }
 
   function removeRecord(id: string) {

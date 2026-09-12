@@ -82,18 +82,42 @@ if (!rollbackNote.includes("8.50") || !rollbackNote.includes("8.05"))
 ok("恢复默认价：新增 95号汽油 ¥8.05「已回退」记录，含价格变化说明");
 
 // 6. 重复恢复防护
-const topBtn = page.locator(".record").first().getByRole("button").first();
+const topCard = page.locator(".record").first();
+const topBtn = topCard.getByRole("button").first();
 const oldBtn = page.locator(".record").nth(1).getByRole("button").first();
 if ((await topBtn.textContent()) !== "已是默认价" || (await topBtn.isEnabled()) !== false)
   throw new Error("回退后最新记录按钮应禁用并显示「已是默认价」");
 if ((await oldBtn.textContent()) !== "历史记录" || (await oldBtn.isEnabled()) !== false)
   throw new Error("旧记录按钮应禁用并显示「历史记录」");
+
+// 已回退是终态：回退卡的「流转状态」必须禁用，不能再变回生效中
+const topFlowBtn = topCard.getByRole("button", { name: "流转状态" });
+if ((await topFlowBtn.isEnabled()) !== false)
+  throw new Error("已回退记录的流转状态按钮应禁用");
 const rollbackCards = await page.locator(".record").allTextContents();
 const n95Rollback = rollbackCards.filter(
   (t) => t.includes("95号汽油") && t.includes("已回退") && t.includes("8.05"),
 ).length;
 if (n95Rollback !== 1) throw new Error(`回退记录数量异常: ${n95Rollback}`);
 ok("重复恢复防护：最新记录「已是默认价」禁用，旧记录「历史记录」禁用，无重复回退记录");
+ok("状态边界：已回退卡「流转状态」按钮禁用，不会再变回生效中");
+
+// 正常记录的流转链仍然可用：生效中 -> 待确认
+const liveCard = page.locator(".record").nth(1);
+const liveFlowBtn = liveCard.getByRole("button", { name: "流转状态" });
+if (!(await liveFlowBtn.isEnabled())) throw new Error("生效中记录的流转按钮应可用");
+await liveFlowBtn.click();
+await page.waitForTimeout(100);
+const liveStatus = await liveCard.locator(".status").textContent();
+if (liveStatus.trim() !== "待确认") throw new Error(`正常流转异常: ${liveStatus}`);
+// 再点一次 -> 已回退，之后按钮禁用
+await liveCard.getByRole("button", { name: "流转状态" }).click();
+await page.waitForTimeout(100);
+if ((await liveCard.locator(".status").textContent()).trim() !== "已回退")
+  throw new Error("待确认流转后应为已回退");
+if (await liveCard.getByRole("button", { name: "流转状态" }).isEnabled())
+  throw new Error("到达已回退后流转按钮应禁用");
+ok("正常状态链保持可用：生效中 → 待确认 → 已回退后按钮禁用");
 await shot("03-restored");
 
 // 7. 刷新持久化

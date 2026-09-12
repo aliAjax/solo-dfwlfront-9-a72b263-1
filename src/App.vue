@@ -198,7 +198,13 @@ const statusCounts = store.statusCounts;
                 >
                   {{ store.isCurrent(record) ? "已是默认价" : "历史记录" }}
                 </button>
-                <button class="secondary" type="button" @click="store.flowStatus(record.id)">
+                <button
+                  class="secondary"
+                  type="button"
+                  :disabled="record.status === '已回退'"
+                  :title="record.status === '已回退' ? '已回退为终态，不能再流转为生效中' : ''"
+                  @click="store.flowStatus(record.id)"
+                >
                   流转状态
                 </button>
                 <button class="danger" type="button" @click="store.removeRecord(record.id)">

@@ -110,6 +110,25 @@ function check(name, fn) {
     assert.equal(store.isAtDefault(rollbackRecord), true);
   });
 
+  // 用例 9.5：已回退记录不能再流转成生效中
+  check("已回退是终态：流转被拒绝且状态保持已回退", () => {
+    assert.equal(store.flowStatus(rollbackRecord.id), false);
+    assert.equal(store.records.value[0].status, "已回退");
+  });
+
+  // 用例 9.6：正常状态链 生效中 → 待确认 → 已回退 仍可流转
+  check("正常状态链：生效中 → 待确认 → 已回退", () => {
+    const live = store.records.value.find((r) => r.id === created.id);
+    assert.equal(live.status, "生效中");
+    assert.equal(store.flowStatus(live.id), true);
+    assert.equal(store.records.value.find((r) => r.id === live.id).status, "待确认");
+    assert.equal(store.flowStatus(live.id), true);
+    assert.equal(store.records.value.find((r) => r.id === live.id).status, "已回退");
+    // 到达终态后继续流转仍被拒绝
+    assert.equal(store.flowStatus(live.id), false);
+    assert.equal(store.records.value.find((r) => r.id === live.id).status, "已回退");
+  });
+
   // 用例 10：历史记录（非最新）重复恢复被拒绝；最新记录可恢复
   check("历史记录重复恢复被拒绝（7.18 已被 7.30 覆盖）", () => {
     const oldDiesel = store.records.value.find((r) => r.fuel === "柴油" && r.price === 7.18);

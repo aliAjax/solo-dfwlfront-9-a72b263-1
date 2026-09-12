@@ -1,194 +1,90 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
+import {
+  DEFAULT_PRICES,
+  FUELS,
+  STATUSES,
+  usePriceStore,
+  type Fuel,
+  type PriceRecord,
+} from "./priceLog";
 
-type Field = {
-  key: string;
-  label: string;
-  type?: "number" | "date" | "select";
-  options?: readonly string[];
-};
+const stack = ["Vue3", "Vite", "TypeScript", "Pinia", "Naive UI"];
+const fuelFilters = ["全部油品", ...FUELS] as const;
+const statusFilters = ["全部状态", ...STATUSES] as const;
 
-type RecordItem = {
-  id: string;
-  status: string;
-  notes: string;
-  createdAt: string;
-  [key: string]: string | number;
-};
+const store = usePriceStore();
 
-const project = {
-  "number": 9,
-  "folder": "dfwl/frontend/dfwlfront-9",
-  "framework": "vue",
-  "title": "油品价格维护",
-  "subtitle": "维护挂牌价、记录更新时间，并支持恢复默认价格。",
-  "industry": "石油",
-  "stack": [
-    "Vue3",
-    "Vite",
-    "TypeScript",
-    "Pinia",
-    "Naive UI"
-  ],
-  "storageKey": "dfwlfront-9-price",
-  "formTitle": "调整油品价格",
-  "primaryAction": "保存价格",
-  "entityLabel": "油品",
-  "statuses": [
-    "生效中",
-    "待确认",
-    "已回退"
-  ],
-  "filters": [
-    "全部油品",
-    "92号汽油",
-    "95号汽油",
-    "98号汽油",
-    "柴油"
-  ],
-  "fields": [
-    {
-      "key": "fuel",
-      "label": "油品",
-      "type": "select",
-      "options": [
-        "92号汽油",
-        "95号汽油",
-        "98号汽油",
-        "柴油"
-      ]
-    },
-    {
-      "key": "price",
-      "label": "挂牌价",
-      "type": "number"
-    },
-    {
-      "key": "operator",
-      "label": "操作员"
-    },
-    {
-      "key": "effectiveDate",
-      "label": "生效日期",
-      "type": "date"
-    }
-  ],
-  "records": [
-    {
-      "fuel": "92号汽油",
-      "price": 7.62,
-      "operator": "站长",
-      "effectiveDate": "2026-06-30",
-      "status": "生效中",
-      "notes": "正常调价"
-    },
-    {
-      "fuel": "柴油",
-      "price": 7.18,
-      "operator": "值班经理",
-      "effectiveDate": "2026-06-30",
-      "status": "待确认",
-      "notes": "等待复核"
-    }
-  ],
-  "metricLabels": [
-    "油品数",
-    "待确认",
-    "平均挂牌价"
-  ]
-} as const;
-
-const fields = project.fields as readonly Field[];
-const statuses = [...project.statuses];
-
-function createBlank() {
-  return Object.fromEntries(fields.map((field) => [field.key, field.type === "number" ? 0 : ""]));
-}
-
-function loadRecords(): RecordItem[] {
-  const raw = localStorage.getItem(project.storageKey);
-  if (!raw) {
-    return project.records.map((record, index) => ({
-      ...record,
-      id: `seed-${index + 1}`,
-      createdAt: new Date(Date.now() - index * 86400000).toISOString()
-    })) as RecordItem[];
-  }
-  try {
-    return JSON.parse(raw) as RecordItem[];
-  } catch {
-    return [];
-  }
-}
-
-const records = ref<RecordItem[]>(loadRecords());
-const form = reactive<Record<string, string | number>>(createBlank());
-const note = ref("");
-const filter = ref(project.filters[0]);
-
-const filteredRecords = computed(() => {
-  if (filter.value.startsWith("全部")) return records.value;
-  return records.value.filter((record) => Object.values(record).includes(filter.value));
+const form = reactive({
+  fuel: "" as Fuel | "",
+  price: "" as number | "",
+  operator: "",
+  effectiveDate: new Date().toISOString().slice(0, 10),
 });
+const note = ref("");
+const fuelFilter = ref<(typeof fuelFilters)[number]>("全部油品");
+const statusFilter = ref<(typeof statusFilters)[number]>("全部状态");
+
+const filteredRecords = computed(() =>
+  store.filterRecords(fuelFilter.value, statusFilter.value),
+);
+
+const hasAnyRecord = computed(() => store.records.value.length > 0);
 
 const metrics = computed(() => {
-  const total = records.value.length;
-  const second = records.value.filter((record) => record.status === statuses[1]).length;
-  const third = records.value.filter((record) => record.status === statuses[2]).length;
-  const numberValues = records.value.flatMap((record) =>
-    fields.filter((field) => field.type === "number").map((field) => Number(record[field.key] || 0))
-  );
-  const sum = numberValues.reduce((acc, value) => acc + value, 0);
-  return [total, second || sum, third || Math.round(sum / Math.max(total, 1))];
+  const all = store.records.value;
+  const pending = all.filter((record) => record.status === "待确认").length;
+  const latestByFuel = new Map<Fuel, PriceRecord>();
+  for (const record of all) {
+    if (!latestByFuel.has(record.fuel)) latestByFuel.set(record.fuel, record);
+  }
+  const latestPrices = [...latestByFuel.values()].map((record) => record.price);
+  const avg = latestPrices.length
+    ? (latestPrices.reduce((acc, price) => acc + price, 0) / latestPrices.length).toFixed(2)
+    : "0.00";
+  return [
+    { label: "调价记录", value: all.length },
+    { label: "待确认", value: pending },
+    { label: "最新均价", value: `¥${avg}` },
+  ];
 });
 
-const chartRows = computed(() => statuses.map((status) => ({
-  status,
-  value: records.value.filter((record) => record.status === status).length
-})));
-
-const maxChart = computed(() => Math.max(1, ...chartRows.value.map((row) => row.value)));
-
-function persist() {
-  localStorage.setItem(project.storageKey, JSON.stringify(records.value));
-}
-
-function nextStatus(status: string) {
-  const index = statuses.indexOf(status);
-  return statuses[(index + 1) % statuses.length];
-}
-
-function primaryText(record: RecordItem) {
-  const first = fields[0];
-  const second = fields[1];
-  return [record[first.key], record[second.key]].filter(Boolean).join(" / ") || project.entityLabel;
-}
-
 function submit() {
-  records.value = [
-    {
-      ...form,
-      id: crypto.randomUUID(),
-      status: statuses[0],
-      notes: note.value || "暂无备注",
-      createdAt: new Date().toISOString()
-    } as RecordItem,
-    ...records.value
-  ];
-  Object.assign(form, createBlank());
+  if (!form.fuel || form.price === "" || !form.operator || !form.effectiveDate) return;
+  store.addAdjustment({
+    fuel: form.fuel,
+    price: Number(form.price),
+    operator: form.operator,
+    effectiveDate: form.effectiveDate,
+    notes: note.value,
+  });
+  resetForm();
+}
+
+function resetForm() {
+  form.fuel = "";
+  form.price = "";
+  form.operator = "";
+  form.effectiveDate = new Date().toISOString().slice(0, 10);
   note.value = "";
-  persist();
 }
 
-function flow(record: RecordItem) {
-  record.status = nextStatus(record.status);
-  persist();
+function restore(record: PriceRecord) {
+  store.restoreDefault(record);
 }
 
-function remove(id: string) {
-  records.value = records.value.filter((record) => record.id !== id);
-  persist();
+function defaultPriceLabel(record: PriceRecord) {
+  return DEFAULT_PRICES[record.fuel].toFixed(2);
 }
+
+function formatTime(iso: string) {
+  return iso.replace("T", " ").slice(0, 16);
+}
+
+const maxChart = computed(() =>
+  Math.max(1, ...store.statusCounts.value.map((row) => row.value)),
+);
+const statusCounts = store.statusCounts;
 </script>
 
 <template>
@@ -196,73 +92,128 @@ function remove(id: string) {
     <div class="shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">{{ project.industry }}行业前端最小闭环</p>
-          <h1>{{ project.title }}</h1>
-          <p class="subtitle">{{ project.subtitle }}</p>
+          <p class="eyebrow">石油行业前端最小闭环</p>
+          <h1>油品价格维护</h1>
+          <p class="subtitle">维护挂牌价、保存每次调价记录，并支持一键恢复默认挂牌价（自动留下回退记录）。</p>
         </div>
         <div class="stack">
-          <span v-for="item in project.stack" :key="item" class="tag">{{ item }}</span>
+          <span v-for="item in stack" :key="item" class="tag">{{ item }}</span>
         </div>
       </header>
 
       <section class="metrics">
-        <article v-for="(label, index) in project.metricLabels" :key="label" class="metric">
-          <span>{{ label }}</span>
-          <strong>{{ metrics[index] }}</strong>
+        <article v-for="metric in metrics" :key="metric.label" class="metric">
+          <span>{{ metric.label }}</span>
+          <strong>{{ metric.value }}</strong>
         </article>
       </section>
 
       <section class="workspace">
         <form class="panel" @submit.prevent="submit">
-          <h2>{{ project.formTitle }}</h2>
+          <h2>调整油品价格</h2>
           <div class="form-grid">
-            <label v-for="field in fields" :key="field.key">
-              {{ field.label }}
-              <select v-if="field.type === 'select'" v-model="form[field.key]" required>
+            <label>
+              油品
+              <select v-model="form.fuel" required>
                 <option value="">请选择</option>
-                <option v-for="option in field.options" :key="option">{{ option }}</option>
+                <option v-for="fuel in FUELS" :key="fuel" :value="fuel">{{ fuel }}</option>
               </select>
-              <input v-else v-model="form[field.key]" :type="field.type || 'text'" required />
+            </label>
+            <label>
+              挂牌价（元/升）
+              <input v-model.number="form.price" type="number" step="0.01" min="0" required />
+            </label>
+            <label>
+              操作员
+              <input v-model="form.operator" type="text" required />
+            </label>
+            <label>
+              生效日期
+              <input v-model="form.effectiveDate" type="date" required />
             </label>
             <label>
               备注
               <textarea v-model="note" placeholder="填写处理说明或现场备注" />
             </label>
-            <button type="submit">{{ project.primaryAction }}</button>
+            <button type="submit">保存价格</button>
+          </div>
+
+          <div class="default-prices">
+            <h3>默认挂牌价</h3>
+            <ul>
+              <li v-for="fuel in FUELS" :key="fuel">
+                <span>{{ fuel }}</span>
+                <strong>¥{{ DEFAULT_PRICES[fuel].toFixed(2) }}</strong>
+              </li>
+            </ul>
           </div>
         </form>
 
         <section class="list-panel">
           <div class="toolbar">
-            <h2>{{ project.entityLabel }}列表</h2>
-            <select v-model="filter">
-              <option v-for="item in project.filters" :key="item">{{ item }}</option>
-            </select>
+            <h2>调价记录</h2>
+            <div class="filters">
+              <select v-model="fuelFilter">
+                <option v-for="item in fuelFilters" :key="item" :value="item">{{ item }}</option>
+              </select>
+              <select v-model="statusFilter">
+                <option v-for="item in statusFilters" :key="item" :value="item">{{ item }}</option>
+              </select>
+            </div>
           </div>
 
           <div class="record-grid">
-            <div v-if="filteredRecords.length === 0" class="empty">暂无匹配数据</div>
+            <div v-if="filteredRecords.length === 0" class="empty">
+              <template v-if="hasAnyRecord">
+                没有符合「{{ fuelFilter }} / {{ statusFilter }}」的调价记录，请调整筛选条件。
+              </template>
+              <template v-else>暂无调价记录，提交左侧表单完成第一次调价吧。</template>
+            </div>
+
             <article v-for="record in filteredRecords" :key="record.id" class="record">
               <div class="record-head">
-                <p class="record-title">{{ primaryText(record) }}</p>
-                <span class="status">{{ record.status }}</span>
+                <p class="record-title">{{ record.fuel }} / ¥{{ record.price.toFixed(2) }}</p>
+                <span class="status" :class="`status-${record.status}`">{{ record.status }}</span>
               </div>
               <div class="details">
-                <span v-for="field in fields" :key="field.key">{{ field.label }}: {{ record[field.key] }}</span>
+                <span>操作员: {{ record.operator }}</span>
+                <span>生效日期: {{ record.effectiveDate }}</span>
+                <span>记录时间: {{ formatTime(record.createdAt) }}</span>
+                <span>默认价: ¥{{ defaultPriceLabel(record) }}</span>
               </div>
-              <p class="note">{{ record.notes }}</p>
+              <p class="note" :class="{ rollback: record.status === '已回退' }">{{ record.notes }}</p>
               <div class="actions">
-                <button type="button" @click="flow(record)">流转状态</button>
-                <button class="secondary" type="button" @click="navigator.clipboard?.writeText(primaryText(record))">复制摘要</button>
-                <button class="danger" type="button" @click="remove(record.id)">删除</button>
+                <button
+                  v-if="store.isCurrent(record) && !store.isAtDefault(record)"
+                  type="button"
+                  @click="restore(record)"
+                >
+                  恢复默认价
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  disabled
+                  :title="store.isCurrent(record) ? '当前已是默认挂牌价，无需重复恢复' : '历史记录不可重复恢复，仅最新挂牌价可操作'"
+                >
+                  {{ store.isCurrent(record) ? "已是默认价" : "历史记录" }}
+                </button>
+                <button class="secondary" type="button" @click="store.flowStatus(record.id)">
+                  流转状态
+                </button>
+                <button class="danger" type="button" @click="store.removeRecord(record.id)">
+                  删除
+                </button>
               </div>
             </article>
           </div>
 
           <div class="mini-chart">
-            <div v-for="row in chartRows" :key="row.status" class="bar">
+            <div v-for="row in statusCounts" :key="row.status" class="bar">
               <span>{{ row.status }}</span>
-              <div class="bar-track"><div class="bar-fill" :style="{ width: `${(row.value / maxChart) * 100}%` }" /></div>
+              <div class="bar-track">
+                <div class="bar-fill" :style="{ width: `${(row.value / maxChart) * 100}%` }" />
+              </div>
               <strong>{{ row.value }}</strong>
             </div>
           </div>

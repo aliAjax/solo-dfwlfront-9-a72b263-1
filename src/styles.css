@@ -194,6 +194,62 @@ textarea {
   white-space: nowrap;
 }
 
+.status-生效中 { background: #e8f4ef; color: #14724f; }
+.status-待确认 { background: #fdf3e0; color: #a06413; }
+.status-已回退 { background: #f3e9fb; color: #7a3bb0; }
+
+.filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filters select {
+  width: auto;
+  min-width: 120px;
+}
+
+.note.rollback {
+  background: #f7f0fc;
+  color: #66318f;
+}
+
+.default-prices {
+  margin-top: 18px;
+  border-top: 1px dashed #d9e2ee;
+  padding-top: 14px;
+}
+
+.default-prices h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: #445069;
+}
+
+.default-prices ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.default-prices li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  color: #536078;
+  background: #fbfcfe;
+  border: 1px solid #e4ebf4;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.default-prices strong {
+  color: #176b87;
+}
+
 .details {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
